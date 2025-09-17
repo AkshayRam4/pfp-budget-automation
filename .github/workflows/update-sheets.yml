@@ -1,0 +1,90 @@
+name: Update Google Sheets
+
+on:
+  schedule:
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-sheets:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
+        
+    - name: Install ChromeDriver
+      run: |
+        # Get the exact Chrome version installed
+        CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
+        echo "Installed Chrome version: $CHROME_VERSION"
+        
+        # Get the major version for ChromeDriver lookup
+        CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d'.' -f1)
+        echo "Chrome major version: $CHROME_MAJOR"
+        
+        # Get the exact ChromeDriver version that matches this Chrome version
+        CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_$CHROME_MAJOR")
+        echo "Installing ChromeDriver version: $CHROMEDRIVER_VERSION"
+        
+        # Download and install ChromeDriver
+        wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip"
+        sudo unzip /tmp/chromedriver.zip -d /tmp/
+        sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/
+        sudo chmod +x /usr/local/bin/chromedriver
+        
+        # Verify installation and version compatibility
+        echo "ChromeDriver version:"
+        /usr/local/bin/chromedriver --version
+        echo "Chrome version:"
+        google-chrome --version
+        
+        # Additional verification
+        echo "ChromeDriver file info:"
+        ls -la /usr/local/bin/chromedriver
+        echo "ChromeDriver permissions:"
+        stat /usr/local/bin/chromedriver
+        
+    - name: List files for debugging
+      run: |
+        echo "Current directory:"
+        pwd
+        echo "Files in current directory:"
+        ls -la
+        echo "Looking for test.py:"
+        find . -name "test.py" -type f
+        
+    - name: Run Google Sheets updater
+      run: |
+        echo "Starting Google Sheets update..."
+        if [ -f "test.py" ]; then
+          echo "Found test.py in current directory"
+          python test.py --csv-url "https://docs.google.com/spreadsheets/d/12I3l5W2CBLvuyMpSnau9NiHBMpmIeptQTcP6vUjY-ls/edit?usp=sharing"
+        else
+          echo "test.py not found in current directory, searching..."
+          TEST_FILE=$(find . -name "test.py" -type f | head -1)
+          if [ -n "$TEST_FILE" ]; then
+            echo "Found test.py at: $TEST_FILE"
+            python "$TEST_FILE" --csv-url "https://docs.google.com/spreadsheets/d/12I3l5W2CBLvuyMpSnau9NiHBMpmIeptQTcP6vUjY-ls/edit?usp=sharing"
+          else
+            echo "ERROR: test.py not found anywhere in the repository"
+            exit 1
+          fi
+        fi
+        echo "Google Sheets update completed!"
